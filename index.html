@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>組套內容管理系統 v3.3 - POST 穩定同步版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        .tab-active { 
+            background-color: white; 
+            color: #2563eb; 
+            border-bottom: 3px solid #2563eb;
+            font-weight: bold;
+        }
+        .custom-scrollbar::-webkit-scrollbar { height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .toast { animation: fadeUp 0.3s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+    <!-- GAS URL 輸入層 -->
+    <div id="setup-overlay" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-slate-800 mb-4">設定 GAS 來源</h2>
+            <p class="text-slate-600 mb-6 text-sm">請輸入支援回寫功能的 GAS 網址：</p>
+            <input type="text" id="gas-url-input" placeholder="https://script.google.com/macros/s/.../exec" 
+                   class="w-full px-4 py-3 border border-slate-200 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+            <button onclick="saveGasUrl()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-all">
+                開始同步資料
+            </button>
+        </div>
+    </div>
+
+    <!-- 新增頁籤彈窗 -->
+    <div id="tab-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4">
+            <h3 class="text-xl font-bold text-slate-800 mb-4">新增頁籤</h3>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">頁籤名稱</label>
+                <input type="text" id="new-tab-name" placeholder="例如：工作表2" class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeTabModal()" class="flex-1 px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-medium hover:bg-slate-200 transition-all">取消</button>
+                <button onclick="confirmAddSheet()" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all">建立</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 編輯內容彈窗 -->
+    <div id="item-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-lg w-full mx-4">
+            <h3 id="modal-title" class="text-xl font-bold text-slate-800 mb-4">編輯組套</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">組套名稱</label>
+                    <input type="text" id="edit-name" class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">組套內容</label>
+                    <textarea id="edit-content" rows="4" class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">屬性 (Y 為雙按鈕)</label>
+                    <input type="text" id="edit-attr" placeholder="N" class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeModal()" class="flex-1 px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-medium hover:bg-slate-200 transition-all">取消</button>
+                <button onclick="saveItem()" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all">儲存並同步</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主內容區 -->
+    <div class="max-w-6xl mx-auto py-6 px-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-emerald-600">組套管理系統</h1>
+                <p class="text-slate-500 text-sm mt-1">同步強化版：採用 POST 方法解決大數據同步問題</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="openTabModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition-all shadow-md flex items-center gap-2">
+                    <span>+</span> 新增頁籤
+                </button>
+                <button onclick="resetSetup()" class="text-xs text-slate-400 hover:text-slate-600 underline">重設網址</button>
+            </div>
+        </div>
+
+        <!-- 頁籤選單 -->
+        <div id="tab-container" class="flex bg-slate-200/50 p-1 rounded-xl mb-8 overflow-x-auto custom-scrollbar"></div>
+
+        <!-- 讀取狀態 -->
+        <div id="loader" class="flex flex-col items-center justify-center py-20 hidden">
+            <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent"></div>
+            <p id="loader-text" class="mt-4 text-slate-500">處理中...</p>
+        </div>
+
+        <!-- 資料格線 -->
+        <div id="content-grid" class="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <!-- 左側區域 -->
+            <section>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2">
+                        <div class="w-1.5 h-6 bg-blue-500 rounded-full"></div>
+                        <h2 class="text-xl font-bold text-slate-700">左側組套</h2>
+                    </div>
+                    <button onclick="openModal('left', -1)" class="text-blue-600 text-sm font-bold hover:underline">+ 新增內容</button>
+                </div>
+                <div id="left-column" class="grid grid-cols-1 gap-3"></div>
+            </section>
+
+            <!-- 右側區域 -->
+            <section>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2">
+                        <div class="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
+                        <h2 class="text-xl font-bold text-slate-700">右側組套</h2>
+                    </div>
+                    <button onclick="openModal('right', -1)" class="text-emerald-600 text-sm font-bold hover:underline">+ 新增內容</button>
+                </div>
+                <div id="right-column" class="grid grid-cols-1 gap-3"></div>
+            </section>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-10 left-1/2 -translate-x-1/2 z-[120] flex flex-col gap-2"></div>
+
+    <script>
+        let allData = {};
+        let currentSheet = "";
+        let currentGasUrl = localStorage.getItem('gas_url');
+        let editingContext = { side: '', index: -1 };
+
+        window.onload = () => {
+            if (!currentGasUrl) document.getElementById('setup-overlay').classList.remove('hidden');
+            else fetchData();
+        };
+
+        function saveGasUrl() {
+            const val = document.getElementById('gas-url-input').value.trim();
+            if (val.includes('script.google.com')) {
+                localStorage.setItem('gas_url', val);
+                currentGasUrl = val;
+                document.getElementById('setup-overlay').classList.add('hidden');
+                fetchData();
+            } else showToast('請輸入正確的 GAS 網址', 'error');
+        }
+
+        function resetSetup() { 
+            if(confirm("確定要重設網址嗎？")) {
+                localStorage.removeItem('gas_url'); 
+                location.reload(); 
+            }
+        }
+
+        async function fetchData() {
+            setLoading(true, "讀取雲端資料...");
+            try {
+                // 讀取依然可以使用 GET
+                const res = await fetch(currentGasUrl);
+                allData = await res.json();
+                const names = Object.keys(allData);
+                if (names.length > 0) {
+                    if (!currentSheet || !allData[currentSheet]) currentSheet = names[0];
+                    renderTabs(names);
+                    renderContent(currentSheet);
+                }
+            } catch (e) { 
+                showToast('讀取失敗，請檢查網路或 GAS 部署狀態', 'error'); 
+            }
+            finally { setLoading(false); }
+        }
+
+        function setLoading(show, text) {
+            document.getElementById('loader-text').innerText = text;
+            document.getElementById('loader').classList.toggle('hidden', !show);
+            document.getElementById('content-grid').classList.toggle('opacity-30', show);
+            document.getElementById('content-grid').classList.toggle('pointer-events-none', show);
+        }
+
+        function renderTabs(names) {
+            const container = document.getElementById('tab-container');
+            container.innerHTML = '';
+            names.forEach(name => {
+                const btn = document.createElement('button');
+                btn.className = `px-6 py-2.5 rounded-lg text-sm transition-all whitespace-nowrap ${name === currentSheet ? 'tab-active shadow-sm' : 'text-slate-500 hover:text-slate-700'}`;
+                btn.innerText = name;
+                btn.onclick = () => { currentSheet = name; renderTabs(names); renderContent(name); };
+                container.appendChild(btn);
+            });
+        }
+
+        function renderContent(sheetName) {
+            const leftCol = document.getElementById('left-column');
+            const rightCol = document.getElementById('right-column');
+            leftCol.innerHTML = ''; rightCol.innerHTML = '';
+            const rows = allData[sheetName] || [];
+            rows.forEach((row, idx) => {
+                if (row.leftName) leftCol.appendChild(createCard(row.leftName, row.leftContent, row.leftAttr, 'blue', 'left', idx));
+                if (row.rightName) rightCol.appendChild(createCard(row.rightName, row.rightContent, row.rightAttr, 'emerald', 'right', idx));
+            });
+        }
+
+        function createCard(name, content, attr, color, side, idx) {
+            const div = document.createElement('div');
+            const isY = attr?.toUpperCase() === 'Y';
+            div.className = `bg-white p-4 border border-slate-200 rounded-xl shadow-sm group transition-all hover:border-${color}-300 hover:shadow-md`;
+            
+            let html = `
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex-1 cursor-pointer font-medium text-slate-700 hover:text-${color}-600" id="copy-main">${name}</div>
+                    <button id="edit-btn" class="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-blue-600 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+            `;
+            if (isY) {
+                const btnStyle = `flex-1 py-1.5 text-xs font-bold rounded-lg transition-all bg-${color}-50 text-${color}-600 hover:bg-${color}-600 hover:text-white`;
+                html += `<div class="flex gap-2"><button id="btn-l" class="${btnStyle}">LEFT</button><button id="btn-r" class="${btnStyle}">RIGHT</button></div>`;
+            }
+
+            div.innerHTML = html;
+            div.querySelector('#copy-main').onclick = () => copyText(content, name);
+            div.querySelector('#edit-btn').onclick = (e) => { e.stopPropagation(); openModal(side, idx); };
+            if (isY) {
+                div.querySelector('#btn-l').onclick = (e) => { e.stopPropagation(); copyText(content.replaceAll('{side1}','left').replaceAll('{side2}','right'), name + ' (L)'); };
+                div.querySelector('#btn-r').onclick = (e) => { e.stopPropagation(); copyText(content.replaceAll('{side1}','right').replaceAll('{side2}','left'), name + ' (R)'); };
+            }
+            return div;
+        }
+
+        function openTabModal() { 
+            document.getElementById('new-tab-name').value = '';
+            document.getElementById('tab-modal').classList.remove('hidden'); 
+        }
+        function closeTabModal() { document.getElementById('tab-modal').classList.add('hidden'); }
+        
+        async function confirmAddSheet() {
+            const name = document.getElementById('new-tab-name').value.trim();
+            if (!name) return showToast('請輸入名稱', 'error');
+            
+            closeTabModal();
+            setLoading(true, "建立頁籤中...");
+            try {
+                // 改用 POST 確保穩定性
+                const res = await fetch(currentGasUrl, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'addSheet', name: name })
+                });
+                const result = await res.json();
+                if (result.status === 'success') {
+                    currentSheet = name;
+                    await fetchData();
+                    showToast(`頁籤「${name}」建立成功`, 'success');
+                } else {
+                    showToast(result.message || '建立失敗', 'error');
+                }
+            } catch (e) { 
+                showToast('同步失敗，請確認 GAS 程式碼已更新並重新部署', 'error'); 
+            } finally { 
+                setLoading(false); 
+            }
+        }
+
+        function openModal(side, idx) {
+            editingContext = { side, index: idx };
+            document.getElementById('modal-title').innerText = idx === -1 ? '新增組套內容' : '編輯組套內容';
+            if (idx === -1) {
+                document.getElementById('edit-name').value = '';
+                document.getElementById('edit-content').value = '';
+                document.getElementById('edit-attr').value = 'N';
+            } else {
+                const r = allData[currentSheet][idx];
+                document.getElementById('edit-name').value = side === 'left' ? r.leftName : r.rightName;
+                document.getElementById('edit-content').value = side === 'left' ? r.leftContent : r.rightContent;
+                document.getElementById('edit-attr').value = side === 'left' ? r.leftAttr : r.rightAttr;
+            }
+            document.getElementById('item-modal').classList.remove('hidden');
+        }
+        function closeModal() { document.getElementById('item-modal').classList.add('hidden'); }
+
+        async function saveItem() {
+            const n = document.getElementById('edit-name').value.trim();
+            const c = document.getElementById('edit-content').value.trim();
+            const a = document.getElementById('edit-attr').value.trim() || 'N';
+            if (!n) return showToast('組套名稱不可為空', 'error');
+
+            const rows = allData[currentSheet];
+            if (editingContext.index === -1) {
+                const newRow = editingContext.side === 'left' ? 
+                    { leftName: n, leftContent: c, leftAttr: a, rightName: '', rightContent: '', rightAttr: '' } :
+                    { leftName: '', leftContent: '', leftAttr: '', rightName: n, rightContent: c, rightAttr: a };
+                rows.push(newRow);
+            } else {
+                const r = rows[editingContext.index];
+                if (editingContext.side === 'left') { r.leftName = n; r.leftContent = c; r.leftAttr = a; }
+                else { r.rightName = n; r.rightContent = c; r.rightAttr = a; }
+            }
+            closeModal();
+            await syncToSheet();
+        }
+
+        async function syncToSheet() {
+            setLoading(true, "同步變更至 Google Sheet...");
+            const data = allData[currentSheet].map(r => [r.leftName, r.leftContent, r.leftAttr, r.rightName, r.rightContent, r.rightAttr]);
+            
+            try {
+                // 使用 POST 傳送大數據
+                const res = await fetch(currentGasUrl, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'update',
+                        sheet: currentSheet,
+                        data: data
+                    })
+                });
+                const result = await res.json();
+                if (result.status === 'success') { 
+                    showToast('同步成功', 'success'); 
+                    renderContent(currentSheet); 
+                } else {
+                    showToast('雲端回傳錯誤', 'error');
+                }
+            } catch (e) { 
+                showToast('同步失敗，請確認 GAS 是否已部署為「新版本」', 'error'); 
+            } finally { 
+                setLoading(false); 
+            }
+        }
+
+        function copyText(t, n) {
+            if (!t) return showToast('沒有內容可複製', 'error');
+            const el = document.createElement('textarea'); el.value = t; document.body.appendChild(el);
+            el.select(); document.execCommand('copy'); document.body.removeChild(el);
+            showToast(`已複製: ${n}`, 'success');
+        }
+
+        function showToast(m, t) {
+            const c = document.getElementById('toast-container');
+            const d = document.createElement('div');
+            d.className = `${t === 'success' ? 'bg-slate-800' : 'bg-red-600'} text-white px-6 py-3 rounded-full shadow-lg text-sm toast flex items-center gap-2`;
+            d.innerHTML = `<span>${t === 'success' ? '✅' : '❌'} ${m}</span>`;
+            c.appendChild(d); setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 300); }, 2500);
+        }
+    </script>
+</body>
+</html>
